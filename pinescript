@@ -1,0 +1,48 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © RuneDD
+
+//@version=5
+indicator("Institutional Insight Indicator", overlay=true)
+
+// Parameters
+multiplier = input.float(2.5, title="Multiplier")
+length = input.int(50, title="Length of Moving Average")
+smaLength2 = input.int(200, title="SMA Length for Trend")
+zoneLength = input.int(50, title="Length for Supply/Demand Zones")
+buffer = input.float(0.005, title="Buffer for Swing Highs/Lows", minval=0.001, maxval=0.05, step=0.001)
+
+// Calculate average volume and trend SMA
+avgVolume = ta.sma(volume, length)
+trendSMA2 = ta.sma(close, smaLength2)
+
+// Market Structure (Swings)
+swingHigh = close > (1 + buffer) * ta.highest(close[1], zoneLength) and close[1] > close[2]
+swingLow = close < (1 - buffer) * ta.lowest(close[1], zoneLength) and close[1] < close[2]
+
+// For adaptive Fibonacci levels
+mostRecentSwingHigh = ta.valuewhen(swingHigh, close, 0)
+mostRecentSwingLow = ta.valuewhen(swingLow, close, 0)
+
+// Conditions for buying and selling pressures
+buyingPressure = close > trendSMA2 and close > open and volume > avgVolume * multiplier and close[1] < close
+sellingPressure = close < trendSMA2 and close < open and volume > avgVolume * multiplier and close[1] > close
+
+// Adaptive Fibonacci retracement levels
+fib382 = mostRecentSwingLow + 0.382 * (mostRecentSwingHigh - mostRecentSwingLow)
+fib500 = mostRecentSwingLow + 0.500 * (mostRecentSwingHigh - mostRecentSwingLow)
+fib618 = mostRecentSwingLow + 0.618 * (mostRecentSwingHigh - mostRecentSwingLow)
+
+// Highlight bars based on conditions
+barcolor(buyingPressure ? color.green : sellingPressure ? color.red : na)
+
+// Plotting for visualization
+plot(trendSMA2, title="Trend SMA", color=color.purple, linewidth=1)
+plotshape(series=swingHigh, title="Swing High", location=location.belowbar, color=color.new(color.green, 60), style=shape.triangleup, size=size.small)
+plotshape(series=swingLow, title="Swing Low", location=location.abovebar, color=color.new(color.red, 60), style=shape.triangledown, size=size.small)
+plot(fib382, title="Fibonacci 38.2%", color=color.new(color.maroon, 50), linewidth=1)
+plot(fib500, title="Fibonacci 50%", color=color.new(#214725, 50), linewidth=1)
+plot(fib618, title="Fibonacci 61.8%", color=color.new(color.maroon, 50), linewidth=1)
+
+// Highlighting high volume areas (pseudo volume profile)
+highVolume = volume > avgVolume * multiplier
+bgcolor(highVolume ? color.new(color.blue, 90) : na)  // Using a very transparent blue color to indicate high volume areas
