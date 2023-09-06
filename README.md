@@ -1,4 +1,4 @@
-### How the "Advanced Institutional Insight Indicator" Works
+### How the "Institutional Insight Indicator" Works
 
 > **Note**: This updated version of the indicator includes new features like RSI and dynamic multipliers. It is no longer directly available on TradingView. To use it, you'll need to upload the source code available in the repository into your TradingView editor.
 
@@ -33,4 +33,4 @@
 - **Buying Pressure Alert**: Triggered when buying pressure conditions are met.
 - **Selling Pressure Alert**: Triggered when selling pressure conditions are met.
 
-By combining these elements, the Advanced Institutional Insight Indicator aims to offer a multi-faceted view of the market, helping traders make more informed decisions.
+By combining these elements, the Institutional Insight Indicator aims to offer a multi-faceted view of the market, helping traders make more informed decisions.
