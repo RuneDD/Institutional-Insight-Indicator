@@ -2,14 +2,22 @@
 // © RuneDD
 
 //@version=5
-indicator("Institutional Insight Indicator", overlay=true)
+indicator("Advanced Institutional Insight Indicator", overlay=true)
 
 // Parameters
-multiplier = input.float(2.5, title="Multiplier")
+multiplier = input.float(2.5, title="Volume Multiplier")
 length = input.int(50, title="Length of Moving Average")
 smaLength2 = input.int(200, title="SMA Length for Trend")
 zoneLength = input.int(50, title="Length for Supply/Demand Zones")
 buffer = input.float(0.005, title="Buffer for Swing Highs/Lows", minval=0.001, maxval=0.05, step=0.001)
+
+// Additional indicators (e.g., RSI)
+rsiPeriod = input.int(14, title="RSI Period")
+rsiValue = ta.rsi(close, rsiPeriod)
+
+// Dynamic multiplier based on volatility
+volatility = ta.stdev(close, 20)
+dynamicMultiplier = multiplier * volatility
 
 // Calculate average volume and trend SMA
 avgVolume = ta.sma(volume, length)
@@ -23,9 +31,9 @@ swingLow = close < (1 - buffer) * ta.lowest(close[1], zoneLength) and close[1] <
 mostRecentSwingHigh = ta.valuewhen(swingHigh, close, 0)
 mostRecentSwingLow = ta.valuewhen(swingLow, close, 0)
 
-// Conditions for buying and selling pressures
-buyingPressure = close > trendSMA2 and close > open and volume > avgVolume * multiplier and close[1] < close
-sellingPressure = close < trendSMA2 and close < open and volume > avgVolume * multiplier and close[1] > close
+// Incorporate RSI in buying and selling pressures
+buyingPressure = close > trendSMA2 and close > open and volume > avgVolume * dynamicMultiplier and close[1] < close and rsiValue < 30
+sellingPressure = close < trendSMA2 and close < open and volume > avgVolume * dynamicMultiplier and close[1] > close and rsiValue > 70
 
 // Adaptive Fibonacci retracement levels
 fib382 = mostRecentSwingLow + 0.382 * (mostRecentSwingHigh - mostRecentSwingLow)
@@ -44,5 +52,9 @@ plot(fib500, title="Fibonacci 50%", color=color.new(#214725, 50), linewidth=1)
 plot(fib618, title="Fibonacci 61.8%", color=color.new(color.maroon, 50), linewidth=1)
 
 // Highlighting high volume areas (pseudo volume profile)
-highVolume = volume > avgVolume * multiplier
+highVolume = volume > avgVolume * dynamicMultiplier
 bgcolor(highVolume ? color.new(color.blue, 90) : na)  // Using a very transparent blue color to indicate high volume areas
+
+// Alerts
+alertcondition(buyingPressure, title="Buying Pressure Alert", message="Buying Pressure Detected!")
+alertcondition(sellingPressure, title="Selling Pressure Alert", message="Selling Pressure Detected!")
