@@ -1,66 +1,98 @@
-// Institutional Insight Indicator
+// --------------------------------------------------------------------------------------------------
+// Institutional Insight Indicator (Enhanced)
 // This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
 // © RuneDD
+//@version=7
+indicator(title="Institutional Insight Indicator [Enhanced]", shorttitle="III [E]", overlay=true)
 
-//@version=6
-indicator("Institutional Insight Indicator [Enhanced]", overlay=true, shorttitle="III [E]")
+// 1. INPUTS
+groupGeneral = "General Settings"
+multiplier   = input.float(2.5, title="Volume Multiplier", group=groupGeneral, tooltip="Scales the volatility-based volume threshold.")
+length       = input.int(50,    title="Volume MA Length",  group=groupGeneral, tooltip="Period used for average volume calculation.")
+buffer       = input.float(0.005, title="Swing Buffer", group=groupGeneral, minval=0.001, maxval=0.05, step=0.001, tooltip="Offset to confirm swing highs/lows.")
 
-// ------------------ Parameters ------------------
-// General
-multiplier = input.float(2.5, title="Volume Multiplier")
-length = input.int(50, title="Length of Moving Average")
-buffer = input.float(0.005, title="Buffer for Swing Highs/Lows", minval=0.001, maxval=0.05, step=0.001)
+groupTrend   = "Trend & Zones"
+smaLength2   = input.int(200,   title="Trend SMA Length",        group=groupTrend, tooltip="Period for the main SMA to determine the overall trend.")
+zoneLength   = input.int(50,    title="Supply/Demand Zone Length", group=groupTrend, tooltip="Lookback period for swing high/low zones.")
 
-// SMA
-smaLength2 = input.int(200, title="SMA Length for Trend")
-zoneLength = input.int(50, title="Length for Supply/Demand Zones")
+groupRSI     = "RSI Settings"
+rsiPeriod    = input.int(14, title="RSI Period", group=groupRSI, tooltip="RSI calculation period.")
 
-// RSI
-rsiPeriod = input.int(14, title="RSI Period")
+// 2. CALCULATIONS
+
+// 2.1 Volatility & Volume
+volatility        = ta.stdev(close, 20)
+dynamicMultiplier = multiplier * volatility
+avgVolume         = ta.sma(volume, length)
+
+// 2.2 Trend SMA
+trendSMA = ta.sma(close, smaLength2)
+
+// 2.3 RSI
 rsiValue = ta.rsi(close, rsiPeriod)
 
-// ------------------ Calculations ------------------
-volatility = ta.stdev(close, 20)
-dynamicMultiplier = multiplier * volatility
-avgVolume = ta.sma(volume, length)
-trendSMA2 = ta.sma(close, smaLength2)
-
-// Swings
+// 2.4 Swings
+// Swing high if current close > highest close of zoneLength (plus buffer)
+// Swing low if current close < lowest close of zoneLength (minus buffer)
 swingHigh = close > (1 + buffer) * ta.highest(close[1], zoneLength) and close[1] > close[2]
-swingLow = close < (1 - buffer) * ta.lowest(close[1], zoneLength) and close[1] < close[2]
+swingLow  = close < (1 - buffer) * ta.lowest(close[1], zoneLength)  and close[1] < close[2]
 
-// Fibonacci
+// 2.5 Fibonacci (based on most recent swings)
 mostRecentSwingHigh = ta.valuewhen(swingHigh, close, 0)
-mostRecentSwingLow = ta.valuewhen(swingLow, close, 0)
+mostRecentSwingLow  = ta.valuewhen(swingLow,  close, 0)
+
 fib382 = mostRecentSwingLow + 0.382 * (mostRecentSwingHigh - mostRecentSwingLow)
 fib500 = mostRecentSwingLow + 0.500 * (mostRecentSwingHigh - mostRecentSwingLow)
 fib618 = mostRecentSwingLow + 0.618 * (mostRecentSwingHigh - mostRecentSwingLow)
 
-// Pressures
-buyingPressure = close > trendSMA2 and close > open and volume > avgVolume * dynamicMultiplier and close[1] < close and rsiValue < 30
-sellingPressure = close < trendSMA2 and close < open and volume > avgVolume * dynamicMultiplier and close[1] > close and rsiValue > 70
+// 2.6 Buying & Selling Pressure
+buyingPressure  = (close > trendSMA) and (close > open) and (volume > avgVolume * dynamicMultiplier) and (close[1] < close) and (rsiValue < 30)
+sellingPressure = (close < trendSMA) and (close < open) and (volume > avgVolume * dynamicMultiplier) and (close[1] > close) and (rsiValue > 70)
 
-// ------------------ Visualization ------------------
-// Bar Colors
+// 3. SUPPLY & DEMAND ZONES
+
+var box supplyBox = na
+var box demandBox = na
+
+// Pivot prices for new zones
+pivotHighPrice = ta.valuewhen(swingHigh, high, 0)
+pivotLowPrice  = ta.valuewhen(swingLow,  low,  0)
+
+// On a new swing high -> remove old supply, then create new supply zone
+if swingHigh
+    if not na(supplyBox)
+        box.delete(supplyBox)
+    supplyBox := box.new(left=bar_index, top=pivotHighPrice, right=bar_index+1, bottom=ta.valuewhen(swingHigh, close, 0), border_color=color.new(color.red, 0), bgcolor=color.new(color.red, 85))
+
+if not na(supplyBox)
+    box.set_right(supplyBox, bar_index)
+
+// On a new swing low -> remove old demand, then create new demand zone
+if swingLow
+    if not na(demandBox)
+        box.delete(demandBox)
+    demandBox := box.new(left=bar_index, top=ta.valuewhen(swingLow, close, 0), right=bar_index+1, bottom=pivotLowPrice, border_color=color.new(color.green, 0), bgcolor=color.new(color.green, 85))
+
+if not na(demandBox)
+    box.set_right(demandBox, bar_index)
+
+// 4. VISUALIZATION
+
+// 4.1 Bar Color
 barcolor(buyingPressure ? color.new(color.green, 90) : sellingPressure ? color.new(color.red, 90) : na)
 
-// SMA Plot
-plot(trendSMA2, title="Trend SMA", color=color.purple, linewidth=2)
+// 4.2 Trend SMA
+plot(trendSMA, title="Trend SMA", color=color.purple, linewidth=2)
 
-// Swing Indicators
-plotshape(series=swingHigh, title="Swing High", location=location.belowbar, color=color.green, style=shape.labelup, text="High")
-plotshape(series=swingLow, title="Swing Low", location=location.abovebar, color=color.red, style=shape.labeldown, text="Low")
+// 4.3 Fibonacci Levels
+plot(fib382, title="Fib 38.2%", color=color.new(color.orange, 60), linewidth=2)
+plot(fib500, title="Fib 50%",   color=color.new(color.blue,   60), linewidth=1)
+plot(fib618, title="Fib 61.8%", color=color.new(color.orange, 60), linewidth=2)
 
-// Fibonacci Levels
-plot(fib382, title="Fibonacci 38.2%", color=color.new(color.orange, 60), linewidth=2)
-plot(fib500, title="Fibonacci 50%", color=color.new(color.blue, 60), linewidth=1)
-plot(fib618, title="Fibonacci 61.8%", color=color.new(color.orange, 60), linewidth=2)
-
-// High Volume Areas
+// 4.4 High Volume Background
 highVolume = volume > avgVolume * dynamicMultiplier
 bgcolor(highVolume ? color.new(color.blue, 95) : na)
 
-// ------------------ Alerts ------------------
-alertcondition(buyingPressure, title="Buying Pressure Alert", message="Buying Pressure Detected!")
+// 5. ALERTS
+alertcondition(buyingPressure,  title="Buying Pressure Alert",  message="Buying Pressure Detected!")
 alertcondition(sellingPressure, title="Selling Pressure Alert", message="Selling Pressure Detected!")
-
