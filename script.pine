@@ -2,7 +2,7 @@
 // Institutional Insight Indicator (Enhanced)
 // This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
 // © RuneDD
-//@version=7
+//@version=6
 indicator(title="Institutional Insight Indicator [Enhanced]", shorttitle="III [E]", overlay=true)
 
 // 1. INPUTS
