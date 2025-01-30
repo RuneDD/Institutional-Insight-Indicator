@@ -1,37 +1,86 @@
-### How the "Institutional Insight Indicator [Enhanced]" Works
+# Institutional Insight Indicator [Enhanced]
 
-> **Note**: This enhanced version of the indicator includes new features like RSI, dynamic multipliers, and improved visual elements. It is no longer directly available on TradingView. To use it, you'll need to upload the source code available from this repository into your TradingView editor and save it as a custom indicator into the "My scripts" section.
+This Pine Script indicator combines volume, price action swings, RSI, and supply/demand zones to help traders identify potential market turning points and volume-driven signals.
 
-#### Parameters
-- **Multiplier**: A factor used to amplify the average trading volume for identifying buying and selling pressures.
-- **Dynamic Multiplier**: The original multiplier is dynamically adjusted based on the market's volatility.
-- **Length of Moving Average**: Specifies the period for calculating the Simple Moving Average (SMA) of the trading volume.
-- **SMA Length for Trend**: Specifies the period for calculating the SMA of the closing prices to determine the overall market trend.
-- **Length for Supply/Demand Zones**: The period used for identifying swing highs and lows.
-- **Buffer for Swing Highs/Lows**: A percentage buffer applied to swing highs and lows to filter out market noise.
-- **RSI Period**: Specifies the period for calculating the Relative Strength Index (RSI).
+> **Note**: This indicator is not publicly published on TradingView. To use it, **copy the script** from this repository into the TradingView Pine Editor and **save** it under your “My scripts”.
 
-#### Calculations
-1. **Average Volume**: The SMA of the trading volume over a specified period.
-2. **Trend SMA**: The SMA of the closing prices over a specified period, used to identify the market trend.
-3. **Swing Highs/Lows**: Identified when the closing price exceeds or falls below the highest or lowest closing prices within a specified zone, adjusted by a buffer.
-4. **Most Recent Swing High/Low**: The most recent price levels at which a swing high or low occurred.
-5. **Buying/Selling Pressure**: Conditions identified based on the relationship between the closing price, Trend SMA, average volume, and RSI.
+---
 
-#### Adaptive Fibonacci Levels
-- **Fibonacci 38.2%**: Calculated as `mostRecentSwingLow + 0.382 * (mostRecentSwingHigh - mostRecentSwingLow)`
-- **Fibonacci 50%**: Calculated as `mostRecentSwingLow + 0.500 * (mostRecentSwingHigh - mostRecentSwingLow)`
-- **Fibonacci 61.8%**: Calculated as `mostRecentSwingLow + 0.618 * (mostRecentSwingHigh - mostRecentSwingLow)`
+## How It Works
 
-#### Visual Elements
-- **Bar Colors**: Bars are colored green (with 90% transparency) for buying pressure and red (with 90% transparency) for selling pressure.
-- **Trend SMA**: Plotted with a purple line of width 2 for better visibility.
-- **Swing High/Low Markers**: Labels "High" and "Low" are plotted above or below bars where swing highs or lows occur.
-- **Fibonacci Levels**: Plotted as lines on the chart with varying line widths to distinguish between different levels.
-- **High Volume Areas**: Highlighted with a very transparent blue background (95% transparency).
+1. **Volume & Volatility**  
+   - Calculates average volume using a Simple Moving Average (SMA).  
+   - Uses market volatility (standard deviation) to create a dynamic multiplier, scaling the average volume threshold.
 
-#### Alerts
-- **Buying Pressure Alert**: Triggered when the conditions for buying pressure are met.
-- **Selling Pressure Alert**: Triggered when the conditions for selling pressure are met.
+2. **Trend Detection**  
+   - Employs a second SMA (Trend SMA) on closing prices to determine the overall market trend.
 
-By combining these elements, the Institutional Insight Indicator [Enhanced] aims to offer a multi-faceted view of the market, assisting traders in making more informed decisions.
+3. **Swing High/Low Detection**  
+   - Identifies swing highs and lows based on whether the closing price rises above or falls below recent extremes (adjusted by a user-defined buffer).
+
+4. **Supply & Demand Zones**  
+   - Each new swing high spawns a **supply zone** (red box) from that pivot high down to the pivot’s close.  
+   - Each new swing low spawns a **demand zone** (green box) from that pivot’s close down to the pivot low.  
+   - Old zones are replaced when a new swing occurs.
+
+5. **Fibonacci Levels**  
+   - Calculates standard Fibonacci retracement levels (38.2%, 50%, 61.8%) based on the **most recent** swing high and swing low.
+
+6. **Buying & Selling Pressure**  
+   - **Buying Pressure**: Triggered if price is above the Trend SMA, forms a bullish bar with volume above the dynamic threshold, and RSI signals potential oversold conditions.  
+   - **Selling Pressure**: Triggered if price is below the Trend SMA, forms a bearish bar with volume above the dynamic threshold, and RSI signals potential overbought conditions.
+
+---
+
+## Parameters
+
+- **Volume Multiplier**  
+  Scales the calculated average volume threshold.
+- **Volume MA Length**  
+  Sets the SMA period for average volume.
+- **Swing Buffer**  
+  A percentage buffer used to confirm a swing high/low beyond typical noise.
+- **Trend SMA Length**  
+  The SMA period of the closing price used to identify the overall market trend.
+- **Supply/Demand Zone Length**  
+  Lookback period for detecting significant swing highs/lows.
+- **RSI Period**  
+  The number of bars used in the RSI calculation.
+
+---
+
+## Visual Elements
+
+- **Bar Colors**  
+  - Green (90% opacity) if buying pressure is detected.  
+  - Red (90% opacity) if selling pressure is detected.  
+- **Trend SMA**  
+  Plotted in purple with a line width of 2, clearly indicating the trend direction.
+- **Fibonacci Levels**  
+  Lines marking the 38.2%, 50%, and 61.8% retracement levels based on the most recent swing points.
+- **Supply & Demand Boxes**  
+  Boxes (red for supply, green for demand) that update when new swing highs or lows are detected.
+- **High Volume Background**  
+  A pale blue background indicates bars that exceed the dynamic volume threshold.
+
+---
+
+## Alerts
+
+- **Buying Pressure Alert**  
+  Notifies you when the script detects a potential buying opportunity.
+- **Selling Pressure Alert**  
+  Notifies you when the script detects a potential selling opportunity.
+
+---
+
+## Usage
+
+1. **Open TradingView Pine Editor**  
+   Navigate to [TradingView](https://www.tradingview.com/), open a chart, and click “Pine Editor” at the bottom.
+2. **Paste the Source Code**  
+   Copy the script from this repository into the editor.
+3. **Save & Add to Chart**  
+   Click “Save,” then “Add to Chart.” Your custom indicator will now appear in “My Scripts.”
+
+By combining volume analysis, RSI, supply/demand zones, and adaptive Fibonacci levels, the **Institutional Insight Indicator [Enhanced]** can help traders spot potential inflection points and overall market sentiment in real time.
