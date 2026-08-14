@@ -1,98 +1,586 @@
 // --------------------------------------------------------------------------------------------------
-// Institutional Insight Indicator (Enhanced)
+// Institutional Insight Indicator [Enhanced] v2.0
+// Professional-Grade Smart Money & Institutional Order Flow Detection
 // This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
-// © RuneDD
+// © RuneDD | Refactored with advanced market microstructure analysis
+//
+// WHAT THIS DOES (Simple Explanation):
+// • Detects when BIG MONEY/INSTITUTIONS are buying or selling (not retail traders)
+// • Shows SUPPLY ZONES (red boxes = sell pressure) and DEMAND ZONES (green boxes = buy support)
+// • Analyzes price TRENDS using 3 colored lines: Blue (fast), Orange (medium), Red (slow)
+// • Watches for BIG VOLUME SPIKES and unusual candle patterns
+// • Generates BUY/SELL SIGNALS with a confidence score (0-100%)
+// • Displays everything in an easy dashboard on the top-right of your chart
+//
+// HOW TO USE:
+// 1. Look at the 3 trend lines - if stacked UP = bullish, DOWN = bearish
+// 2. Green boxes = buyer support (good place to buy), Red boxes = seller resistance (good place to sell)
+// 3. Look for SIGNALS in the table - green/red boxes appear when conditions align
+// 4. Adjust sensitivity with inputs if indicator is too sensitive or not sensitive enough
+//
 //@version=6
-indicator(title="Institutional Insight Indicator [Enhanced]", shorttitle="III [E]", overlay=true)
+indicator(title="Institutional Insight Indicator [Enhanced] v2.0", shorttitle="III [E2]", overlay=true, max_boxes_count=500, max_lines_count=500)
 
-// 1. INPUTS
-groupGeneral = "General Settings"
-multiplier   = input.float(2.5, title="Volume Multiplier", group=groupGeneral, tooltip="Scales the volatility-based volume threshold.")
-length       = input.int(50,    title="Volume MA Length",  group=groupGeneral, tooltip="Period used for average volume calculation.")
-buffer       = input.float(0.005, title="Swing Buffer", group=groupGeneral, minval=0.001, maxval=0.05, step=0.001, tooltip="Offset to confirm swing highs/lows.")
+// ====================================================================================
+// SECTION 1: INPUT PARAMETERS
+// ====================================================================================
 
-groupTrend   = "Trend & Zones"
-smaLength2   = input.int(200,   title="Trend SMA Length",        group=groupTrend, tooltip="Period for the main SMA to determine the overall trend.")
-zoneLength   = input.int(50,    title="Supply/Demand Zone Length", group=groupTrend, tooltip="Lookback period for swing high/low zones.")
+// General Settings
+groupGeneral = "General"
+volumeMultiplier = input.float(1.8, title="Volume Sensitivity (Volatility Adjusted)", group=groupGeneral, minval=0.5, maxval=5, step=0.1, tooltip="Higher = Detect bigger volume spikes (0.5-5, default 1.8)")
+volumeLength     = input.int(20, title="Volume Lookback Bars", group=groupGeneral, minval=10, maxval=100, tooltip="How many bars to use for average volume (10-100, default 20)")
+atrMultiplier    = input.float(0.7, title="Candle Size Threshold", group=groupGeneral, minval=0.3, maxval=2, step=0.1, tooltip="Minimum candle body size to be 'significant' (0.3-2, default 0.7)")
 
-groupRSI     = "RSI Settings"
-rsiPeriod    = input.int(14, title="RSI Period", group=groupRSI, tooltip="RSI calculation period.")
+// Trend Settings
+groupTrend = "Trend & Structure"
+ema20Len     = input.int(20, title="Short-Term Trend (Bars)", group=groupTrend, tooltip="Blue line - Fast trend (20 bars, default)")
+ema50Len     = input.int(50, title="Medium-Term Trend (Bars)", group=groupTrend, tooltip="Orange line - Medium trend (50 bars, default)")
+ema200Len    = input.int(200, title="Long-Term Trend (Bars)", group=groupTrend, tooltip="Red line - Slow trend (200 bars, default)")
+swingLength  = input.int(5, title="Swing Sensitivity", group=groupTrend, minval=2, maxval=20, tooltip="Lower = Find more swings, Higher = Find major swings only")
 
-// 2. CALCULATIONS
+// Zones Settings
+groupZones = "Supply & Demand Zones"
+maxZones        = input.int(8, title="Maximum Number of Zones to Show", group=groupZones, minval=2, maxval=20, tooltip="How many supply/demand boxes to display (2-20, default 8)")
+zoneMinTouches  = input.int(2, title="Zone Strength Level", group=groupZones, minval=1, maxval=5, tooltip="How many touches makes a zone 'strong' (1-5, default 2)")
+zoneDecay       = input.int(500, title="Zone Age Limit (Bars)", group=groupZones, minval=100, maxval=2000, tooltip="Remove zones older than this many bars (100-2000, default 500)")
 
-// 2.1 Volatility & Volume
-volatility        = ta.stdev(close, 20)
-dynamicMultiplier = multiplier * volatility
-avgVolume         = ta.sma(volume, length)
+// RSI Settings
+groupRSI = "Momentum Indicator"
+rsiLen      = input.int(14, title="Momentum Period (Bars)", group=groupRSI, tooltip="Measure momentum over 14 bars (faster response to changes)")
+rsiOverbought = input.int(70, title="Overbought Level (High)", group=groupRSI, minval=50, maxval=95, tooltip="When above 70: Price is overheated upward (50-95, default 70)")
+rsiOversold   = input.int(30, title="Oversold Level (Low)", group=groupRSI, minval=5, maxval=50, tooltip="When below 30: Price is oversold downward (5-50, default 30)")
 
-// 2.2 Trend SMA
-trendSMA = ta.sma(close, smaLength2)
+// Fibonacci Settings
+groupFib = "Fibonacci"
+showFib = input.bool(true, title="Show Fibonacci Levels", group=groupFib)
 
-// 2.3 RSI
-rsiValue = ta.rsi(close, rsiPeriod)
+// Alert Settings
+groupAlerts = "Alerts & Display"
+minConfidence = input.int(65, title="Signal Confidence Threshold (%)", group=groupAlerts, minval=40, maxval=95, tooltip="Only trigger alerts when confidence reaches this % (40-95, default 65)")
+showDebug     = input.bool(false, title="Show Detailed Scores on Chart", group=groupAlerts, tooltip="Display buy/sell scores and trend on each candle")
 
-// 2.4 Swings
-// Swing high if current close > highest close of zoneLength (plus buffer)
-// Swing low if current close < lowest close of zoneLength (minus buffer)
-swingHigh = close > (1 + buffer) * ta.highest(close[1], zoneLength) and close[1] > close[2]
-swingLow  = close < (1 - buffer) * ta.lowest(close[1], zoneLength)  and close[1] < close[2]
+// ====================================================================================
+// SECTION 2: TYPE DEFINITIONS & GLOBAL VARIABLES
+// ====================================================================================
 
-// 2.5 Fibonacci (based on most recent swings)
-mostRecentSwingHigh = ta.valuewhen(swingHigh, close, 0)
-mostRecentSwingLow  = ta.valuewhen(swingLow,  close, 0)
+// Zone type for tracking supply/demand
+type ZoneData
+    float topPrice
+    float bottomPrice
+    int barStart
+    int touchCount
+    bool isSupply
+    float strength
 
-fib382 = mostRecentSwingLow + 0.382 * (mostRecentSwingHigh - mostRecentSwingLow)
-fib500 = mostRecentSwingLow + 0.500 * (mostRecentSwingHigh - mostRecentSwingLow)
-fib618 = mostRecentSwingLow + 0.618 * (mostRecentSwingHigh - mostRecentSwingLow)
+// Market structure type
+type SwingPoint
+    float price
+    int barIndex
+    bool isHigh
 
-// 2.6 Buying & Selling Pressure
-buyingPressure  = (close > trendSMA) and (close > open) and (volume > avgVolume * dynamicMultiplier) and (close[1] < close) and (rsiValue < 30)
-sellingPressure = (close < trendSMA) and (close < open) and (volume > avgVolume * dynamicMultiplier) and (close[1] > close) and (rsiValue > 70)
+// Volume profiling type
+type VolumeProfile
+    float relativeVolume
+    string profileType  // "Climax", "Absorption", "Exhaustion"
+    int strength
 
-// 3. SUPPLY & DEMAND ZONES
+// Confluence scoring arrays
+var array<ZoneData> supplyZones = array.new<ZoneData>()
+var array<ZoneData> demandZones = array.new<ZoneData>()
+var array<SwingPoint> swingHighs = array.new<SwingPoint>()
+var array<SwingPoint> swingLows = array.new<SwingPoint>()
 
-var box supplyBox = na
-var box demandBox = na
+// Dashboard variables
+var string trendLabel = "NEUTRAL"
+var string structureLabel = ""
+var int confidenceScore = 0
 
-// Pivot prices for new zones
-pivotHighPrice = ta.valuewhen(swingHigh, high, 0)
-pivotLowPrice  = ta.valuewhen(swingLow,  low,  0)
+// ====================================================================================
+// SECTION 3: CORE ENGINE - TREND & VOLATILITY
+// ====================================================================================
 
-// On a new swing high -> remove old supply, then create new supply zone
-if swingHigh
-    if not na(supplyBox)
-        box.delete(supplyBox)
-    supplyBox := box.new(left=bar_index, top=pivotHighPrice, right=bar_index+1, bottom=ta.valuewhen(swingHigh, close, 0), border_color=color.new(color.red, 0), bgcolor=color.new(color.red, 85))
+// Exponential Moving Averages
+ema20 = ta.ema(close, ema20Len)
+ema50 = ta.ema(close, ema50Len)
+ema200 = ta.ema(close, ema200Len)
 
-if not na(supplyBox)
-    box.set_right(supplyBox, bar_index)
+// ATR-based volatility (normalized by close price)
+atrVal = ta.atr(14)
+atrPercent = atrVal / close
 
-// On a new swing low -> remove old demand, then create new demand zone
-if swingLow
-    if not na(demandBox)
-        box.delete(demandBox)
-    demandBox := box.new(left=bar_index, top=ta.valuewhen(swingLow, close, 0), right=bar_index+1, bottom=pivotLowPrice, border_color=color.new(color.green, 0), bgcolor=color.new(color.green, 85))
+// Determine trend
+isBullTrend = (ema20 > ema50) and (ema50 > ema200) and (close > ema20)
+isBearTrend = (ema20 < ema50) and (ema50 < ema200) and (close < ema20)
+isTrendStrong = isBullTrend or isBearTrend
 
-if not na(demandBox)
-    box.set_right(demandBox, bar_index)
+// ====================================================================================
+// SECTION 4: VOLUME ENGINE - ATR-NORMALIZED & PROFILING
+// ====================================================================================
 
-// 4. VISUALIZATION
+// Volume metrics
+avgVolume = ta.sma(volume, volumeLength)
+relativeVolume = avgVolume > 0 ? volume / avgVolume : 1.0
 
-// 4.1 Bar Color
-barcolor(buyingPressure ? color.new(color.green, 90) : sellingPressure ? color.new(color.red, 90) : na)
+// ATR-normalized volume threshold (improved from dynamic multiplier)
+// Instead of: volume > avgVolume * (multiplier * stdev)
+// Now: Uses ATR to account for actual price volatility
+dynamicVolThreshold = avgVolume * (1 + (atrPercent * volumeMultiplier))
+isHighVolume = volume > dynamicVolThreshold
 
-// 4.2 Trend SMA
-plot(trendSMA, title="Trend SMA", color=color.purple, linewidth=2)
+// Volume profiling
+volumeClimax = relativeVolume > 2.0
+volumeAbsorption = (relativeVolume >= 1.2 and relativeVolume < 1.8) and (open < close)
+volumeExhaustion = (relativeVolume > 1.8 and relativeVolume < 2.2) and (math.abs(close - open) < atrVal * 0.3)
 
-// 4.3 Fibonacci Levels
-plot(fib382, title="Fib 38.2%", color=color.new(color.orange, 60), linewidth=2)
-plot(fib500, title="Fib 50%",   color=color.new(color.blue,   60), linewidth=1)
-plot(fib618, title="Fib 61.8%", color=color.new(color.orange, 60), linewidth=2)
+// ====================================================================================
+// SECTION 5: CANDLE ANALYSIS - INSTITUTIONAL DETECTION
+// ====================================================================================
 
-// 4.4 High Volume Background
-highVolume = volume > avgVolume * dynamicMultiplier
-bgcolor(highVolume ? color.new(color.blue, 95) : na)
+// Candle components
+bodySize = math.abs(close - open)
+bodyHigh = math.max(close, open)
+bodyLow = math.min(close, open)
+upperWick = high - bodyHigh
+lowerWick = bodyLow - low
+totalRange = high - low
+bodyPercent = totalRange > 0 ? bodySize / totalRange : 0
 
-// 5. ALERTS
-alertcondition(buyingPressure,  title="Buying Pressure Alert",  message="Buying Pressure Detected!")
-alertcondition(sellingPressure, title="Selling Pressure Alert", message="Selling Pressure Detected!")
+// ATR significance filter - only process significant candles
+isSignificantCandle = bodySize > (atrVal * atrMultiplier)
+
+// Bullish institutional candle: large body, small lower wick, close near high
+bullishCondition1 = isSignificantCandle and (close > open) and (lowerWick < totalRange * 0.2)
+bullishCondition2 = (bodyPercent > 0.6) and (close > (high - totalRange * 0.1))
+isBullishInstitutional = bullishCondition1 and bullishCondition2
+
+// Bearish institutional candle: large body, small upper wick, close near low
+bearishCondition1 = isSignificantCandle and (close < open) and (upperWick < totalRange * 0.2)
+bearishCondition2 = (bodyPercent > 0.6) and (close < (low + totalRange * 0.1))
+isBearishInstitutional = bearishCondition1 and bearishCondition2
+
+// ====================================================================================
+// SECTION 6: SWING & PIVOT DETECTION
+// ====================================================================================
+
+// Pivot-based swing detection (HIGH/LOW, not just CLOSE)
+pivotHigh = ta.pivothigh(high, swingLength, swingLength)
+pivotLow = ta.pivotlow(low, swingLength, swingLength)
+
+// Track swing structure for BOS/CHoCH detection
+if not na(pivotHigh)
+    newSwing = SwingPoint.new(price=pivotHigh, barIndex=bar_index[swingLength], isHigh=true)
+    array.push(swingHighs, newSwing)
+    if array.size(swingHighs) > 10
+        array.shift(swingHighs)
+
+if not na(pivotLow)
+    newSwing = SwingPoint.new(price=pivotLow, barIndex=bar_index[swingLength], isHigh=false)
+    array.push(swingLows, newSwing)
+    if array.size(swingLows) > 10
+        array.shift(swingLows)
+
+// Market structure patterns
+lastSwingHigh = array.size(swingHighs) >= 1 ? array.get(swingHighs, array.size(swingHighs) - 1).price : high
+lastSwingLow = array.size(swingLows) >= 1 ? array.get(swingLows, array.size(swingLows) - 1).price : low
+prevSwingHigh = array.size(swingHighs) >= 2 ? array.get(swingHighs, array.size(swingHighs) - 2).price : high
+prevSwingLow = array.size(swingLows) >= 2 ? array.get(swingLows, array.size(swingLows) - 2).price : low
+
+// Higher High, Higher Low (HH, HL)
+isHigherHigh = lastSwingHigh > prevSwingHigh
+isHigherLow = lastSwingLow > prevSwingLow
+isLowerHigh = lastSwingHigh < prevSwingHigh
+isLowerLow = lastSwingLow < prevSwingLow
+
+// Break of Structure (BOS)
+bosUp = isBullTrend and (close > lastSwingHigh) and (close[1] <= lastSwingHigh)
+bosDown = isBearTrend and (close < lastSwingLow) and (close[1] >= lastSwingLow)
+
+// Change of Character (CHoCH)
+chochUp = isBearTrend and isHigherHigh and isHigherLow
+chochDown = isBullTrend and isLowerHigh and isLowerLow
+
+// ====================================================================================
+// SECTION 7: LIQUIDITY & ORDER BLOCKS
+// ====================================================================================
+
+// Liquidity sweep: price touches swing low/high but doesn't break
+liquiditySweepDown = isBullTrend and (low <= lastSwingLow) and (close > lastSwingLow)
+liquiditySweepUp = isBearTrend and (high >= lastSwingHigh) and (close < lastSwingHigh)
+
+// Order block detection: strong candle before structure change
+orderBlockBull = isBullishInstitutional and bosUp
+orderBlockBear = isBearishInstitutional and bosDown
+
+// ====================================================================================
+// SECTION 8: RSI & MOMENTUM ANALYSIS
+// ====================================================================================
+
+rsiValue = ta.rsi(close, rsiLen)
+rsiSmoothed = ta.ema(rsiValue, 5)
+
+// RSI crossovers (much better than RSI < 30 logic)
+rsiCrossAboveOversold = ta.crossover(rsiValue, rsiOversold)
+rsiCrossBelowOverbought = ta.crossunder(rsiValue, rsiOverbought)
+rsiExitingOversold = (rsiValue > rsiOversold) and (rsiValue[1] <= rsiOversold)
+
+// Momentum direction
+isMomentumUp = rsiValue > 50 and rsiValue > rsiValue[1]
+isMomentumDown = rsiValue < 50 and rsiValue < rsiValue[1]
+
+// ====================================================================================
+// SECTION 9: SUPPLY & DEMAND ZONES (Multi-zone management)
+// ====================================================================================
+
+f_updateZones() =>
+    // Clean old zones (decay) - use while loop for safe removal
+    supplyIdx = array.size(supplyZones)
+    while supplyIdx > 0
+        supplyIdx -= 1
+        zone = array.get(supplyZones, supplyIdx)
+        barsSinceCreation = bar_index - zone.barStart
+        if barsSinceCreation > zoneDecay
+            array.remove(supplyZones, supplyIdx)
+    
+    demandIdx = array.size(demandZones)
+    while demandIdx > 0
+        demandIdx -= 1
+        zone = array.get(demandZones, demandIdx)
+        barsSinceCreation = bar_index - zone.barStart
+        if barsSinceCreation > zoneDecay
+            array.remove(demandZones, demandIdx)
+    
+    // Add new zones from pivots - zones scale dynamically with recent price movement
+    if not na(pivotHigh)
+        // Dynamic zone size: Based on recent volatility (ATR) for responsive zones
+        zoneBuffer = atrVal * 0.5  // Zone height adapts to price volatility
+        newZone = ZoneData.new(topPrice=high + zoneBuffer, bottomPrice=pivotHigh - zoneBuffer, barStart=bar_index, 
+                              touchCount=1, isSupply=true, strength=1.0)
+        if array.size(supplyZones) < maxZones
+            array.push(supplyZones, newZone)
+    
+    if not na(pivotLow)
+        zoneBuffer = atrVal * 0.5  // Zone height adapts to price volatility
+        newZone = ZoneData.new(topPrice=pivotLow + zoneBuffer, bottomPrice=low - zoneBuffer, barStart=bar_index,
+                              touchCount=1, isSupply=false, strength=1.0)
+        if array.size(demandZones) < maxZones
+            array.push(demandZones, newZone)
+    
+    // Update touch counts
+    if array.size(supplyZones) > 0
+        for i = 0 to (array.size(supplyZones) - 1)
+            zone = array.get(supplyZones, i)
+            if (low >= zone.bottomPrice and low <= zone.topPrice) or 
+               (high >= zone.bottomPrice and high <= zone.topPrice)
+                zone.touchCount += 1
+                zone.strength := 0.5 + (zone.touchCount * 0.15)
+    
+    if array.size(demandZones) > 0
+        for i = 0 to (array.size(demandZones) - 1)
+            zone = array.get(demandZones, i)
+            if (low >= zone.bottomPrice and low <= zone.topPrice) or 
+               (high >= zone.bottomPrice and high <= zone.topPrice)
+                zone.touchCount += 1
+                zone.strength := 0.5 + (zone.touchCount * 0.15)
+
+f_updateZones()
+
+// Zone proximity detection
+inSupplyZone = false
+inDemandZone = false
+
+if array.size(supplyZones) > 0
+    for i = 0 to (array.size(supplyZones) - 1)
+        zone = array.get(supplyZones, i)
+        if (close >= zone.bottomPrice and close <= zone.topPrice)
+            inSupplyZone := true
+
+if array.size(demandZones) > 0
+    for i = 0 to (array.size(demandZones) - 1)
+        zone = array.get(demandZones, i)
+        if (close >= zone.bottomPrice and close <= zone.topPrice)
+            inDemandZone := true
+
+// ====================================================================================
+// SECTION 10: FIBONACCI SWING CALCULATION
+// ====================================================================================
+
+// Only calculate Fibs from complete swing structure (not random swings)
+fib382 = float(na)
+fib500 = float(na)
+fib618 = float(na)
+
+if array.size(swingHighs) >= 1 and array.size(swingLows) >= 1
+    lastHigh = array.get(swingHighs, array.size(swingHighs) - 1).price
+    lastLow = array.get(swingLows, array.size(swingLows) - 1).price
+    
+    if lastHigh > lastLow
+        swingRange = lastHigh - lastLow
+        fib382 := lastLow + (swingRange * 0.382)
+        fib500 := lastLow + (swingRange * 0.500)
+        fib618 := lastLow + (swingRange * 0.618)
+    else
+        swingRange = lastLow - lastHigh
+        fib382 := lastHigh + (swingRange * 0.382)
+        fib500 := lastHigh + (swingRange * 0.500)
+        fib618 := lastHigh + (swingRange * 0.618)
+
+// ====================================================================================
+// SECTION 11: CONFLUENCE SCORING SYSTEM
+// ====================================================================================
+
+f_calculateBuyScore() =>
+    score = 0.0
+    
+    // Trend (max +20)
+    if isBullTrend
+        score += 20
+    else if isHigherHigh and isHigherLow
+        score += 10
+    
+    // Volume (max +15)
+    if isHighVolume
+        score += 15
+    else if relativeVolume > 1.2
+        score += 8
+    
+    // Demand Zone (max +20)
+    if inDemandZone and array.size(demandZones) > 0
+        zone = array.get(demandZones, 0)
+        score += math.min(20, int(zone.strength * 20))
+    
+    // Liquidity Sweep (max +15)
+    if liquiditySweepDown
+        score += 15
+    
+    // Institutional Candle (max +10)
+    if isBullishInstitutional
+        score += 10
+    
+    // Break of Structure (max +20)
+    if bosUp
+        score += 20
+    
+    // RSI Momentum (max +10)
+    if rsiExitingOversold
+        score += 10
+    else if isMomentumUp
+        score += 5
+    
+    // ATR Filter (only valid signals)
+    if not isSignificantCandle
+        score *= 0.7
+    
+    score
+
+f_calculateSellScore() =>
+    score = 0.0
+    
+    // Trend (max +20)
+    if isBearTrend
+        score += 20
+    else if isLowerHigh and isLowerLow
+        score += 10
+    
+    // Volume (max +15)
+    if isHighVolume
+        score += 15
+    else if relativeVolume > 1.2
+        score += 8
+    
+    // Supply Zone (max +20)
+    if inSupplyZone and array.size(supplyZones) > 0
+        zone = array.get(supplyZones, 0)
+        score += math.min(20, int(zone.strength * 20))
+    
+    // Liquidity Sweep (max +15)
+    if liquiditySweepUp
+        score += 15
+    
+    // Institutional Candle (max +10)
+    if isBearishInstitutional
+        score += 10
+    
+    // Break of Structure (max +20)
+    if bosDown
+        score += 20
+    
+    // RSI Momentum (max +10)
+    if rsiCrossBelowOverbought
+        score += 10
+    else if isMomentumDown
+        score += 5
+    
+    // ATR Filter
+    if not isSignificantCandle
+        score *= 0.7
+    
+    score
+
+buyScore = f_calculateBuyScore()
+sellScore = f_calculateSellScore()
+
+// Confidence percentage (0-100)
+buyConfidence = math.min(100, buyScore)
+sellConfidence = math.min(100, sellScore)
+
+// Signal generation
+isBuySignal = (buyScore >= minConfidence) and isBullTrend
+isSellSignal = (sellScore >= minConfidence) and isBearTrend
+
+// ====================================================================================
+// SECTION 12: VISUALIZATION & DASHBOARD
+// ====================================================================================
+
+// 12.1 Trend EMAs
+plot(ema20, title="EMA 20", color=color.new(color.blue, 0), linewidth=1)
+plot(ema50, title="EMA 50", color=color.new(color.orange, 0), linewidth=1)
+plot(ema200, title="EMA 200", color=color.new(color.red, 0), linewidth=2)
+
+// 12.2 Fibonacci Levels
+plot(showFib and not na(fib382) ? fib382 : na, title="Fib 38.2%", color=color.new(color.purple, 40), linewidth=1)
+plot(showFib and not na(fib500) ? fib500 : na, title="Fib 50%", color=color.new(color.gray, 40), linewidth=1)
+plot(showFib and not na(fib618) ? fib618 : na, title="Fib 61.8%", color=color.new(color.purple, 40), linewidth=1)
+
+// 12.3 Supply & Demand Zones Visualization (Dynamic - scales with price movement)
+if array.size(supplyZones) > 0
+    for i = 0 to (array.size(supplyZones) - 1)
+        zone = array.get(supplyZones, i)
+        // Update zone boundaries dynamically to follow recent price action
+        zone.topPrice := math.max(zone.topPrice, high)
+        zone.bottomPrice := math.max(zone.bottomPrice, high - (atrVal * 1.5))
+        bgColor = zone.touchCount >= zoneMinTouches ? color.new(color.red, 70) : color.new(color.red, 85)
+        box.new(left=zone.barStart, top=zone.topPrice, right=bar_index, bottom=zone.bottomPrice, 
+                border_color=na, bgcolor=bgColor, xloc=xloc.bar_index)
+
+if array.size(demandZones) > 0
+    for i = 0 to (array.size(demandZones) - 1)
+        zone = array.get(demandZones, i)
+        // Update zone boundaries dynamically to follow recent price action
+        zone.bottomPrice := math.min(zone.bottomPrice, low)
+        zone.topPrice := math.min(zone.topPrice, low + (atrVal * 1.5))
+        bgColor = zone.touchCount >= zoneMinTouches ? color.new(color.green, 70) : color.new(color.green, 85)
+        box.new(left=zone.barStart, top=zone.topPrice, right=bar_index, bottom=zone.bottomPrice,
+                border_color=na, bgcolor=bgColor, xloc=xloc.bar_index)
+
+// 12.4 Candle Coloring
+candleColor = color(na)
+if isBullishInstitutional
+    candleColor := color.new(color.lime, 40)
+else if isBearishInstitutional
+    candleColor := color.new(color.fuchsia, 40)
+else if isBullTrend
+    candleColor := color.new(color.green, 80)
+else if isBearTrend
+    candleColor := color.new(color.red, 80)
+
+barcolor(candleColor)
+
+// 12.5 Structure Markers
+if bosUp
+    line.new(x1=bar_index[1], y1=lastSwingLow, x2=bar_index, y2=close, color=color.new(color.green, 50), width=3)
+if bosDown
+    line.new(x1=bar_index[1], y1=lastSwingHigh, x2=bar_index, y2=close, color=color.new(color.red, 50), width=3)
+
+// 12.6 Volume Background
+bgcolor(isHighVolume ? color.new(color.blue, 90) : na)
+
+// 12.7 Dashboard Labels
+trendText = isBullTrend ? "📈 UP" : isBearTrend ? "📉 DOWN" : "➡️ FLAT"
+structureText = ""
+if bosUp
+    structureText += "BRK↑ "
+if bosDown
+    structureText += "BRK↓ "
+if chochUp
+    structureText += "CHG↑ "
+if chochDown
+    structureText += "CHG↓ "
+
+if showDebug
+    var label dashLabel = na
+    label.delete(dashLabel)
+    dashLabel := label.new(bar_index, high, text=trendText + "\nBuy: " + str.tostring(buyScore) + "/" + str.tostring(minConfidence) + "\nSell: " + str.tostring(sellScore) + "/" + str.tostring(minConfidence) + "\n" + structureText,
+                    xloc=xloc.bar_index, yloc=yloc.abovebar, color=na, textcolor=color.white, size=size.small)
+
+// ====================================================================================
+// SECTION 13: ALERTS
+// ====================================================================================
+
+if isBuySignal
+    confidencePercent = str.tostring(math.min(100, buyScore))
+    alertMessage = "🟢 BUY SIGNAL | Confidence: " + confidencePercent + "% | Trend: " + trendText + " | Vol: " + str.tostring(math.round(relativeVolume, 2)) + "x"
+    alert(alertMessage, alert.freq_once_per_bar_close)
+
+if isSellSignal
+    confidencePercent = str.tostring(math.min(100, sellScore))
+    alertMessage = "🔴 SELL SIGNAL | Confidence: " + confidencePercent + "% | Trend: " + trendText + " | Vol: " + str.tostring(math.round(relativeVolume, 2)) + "x"
+    alert(alertMessage, alert.freq_once_per_bar_close)
+
+// Alert conditions for TradingView alerts
+alertcondition(isBuySignal, title="Buy Signal (Confidence-based)", message="BUY SIGNAL DETECTED")
+alertcondition(isSellSignal, title="Sell Signal (Confidence-based)", message="SELL SIGNAL DETECTED")
+alertcondition(bosUp, title="Break of Structure (Upside)", message="BOS UP DETECTED")
+alertcondition(bosDown, title="Break of Structure (Downside)", message="BOS DOWN DETECTED")
+alertcondition(liquiditySweepDown, title="Liquidity Sweep (Buy Setup)", message="BULLISH LIQUIDITY SWEEP")
+alertcondition(liquiditySweepUp, title="Liquidity Sweep (Sell Setup)", message="BEARISH LIQUIDITY SWEEP")
+
+// ====================================================================================
+// SECTION 14: TABLE DASHBOARD (Info Panel)
+// ====================================================================================
+
+if barstate.islast
+    dashTable = table.new(position=position.top_right, columns=2, rows=10, bgcolor=color.new(color.black, 60), border_color=color.gray, frame_color=color.gray)
+    
+    // Row 1: Trend Direction
+    table.cell(dashTable, 0, 0, "📊 TREND", text_color=color.white, bgcolor=color.new(color.gray, 50))
+    trendColor = isBullTrend ? color.green : isBearTrend ? color.red : color.gray
+    table.cell(dashTable, 1, 0, trendText, text_color=trendColor, bgcolor=color.new(color.gray, 80))
+    
+    // Row 2: Signal Strength
+    table.cell(dashTable, 0, 1, "💪 STRENGTH", text_color=color.white, bgcolor=color.new(color.gray, 50))
+    maxConf = math.max(buyScore, sellScore)
+    confColor = maxConf > 75 ? color.green : maxConf > 60 ? color.orange : color.gray
+    table.cell(dashTable, 1, 1, str.tostring(math.round(maxConf)) + "%", text_color=confColor)
+    
+    // Row 3: Volume Activity
+    table.cell(dashTable, 0, 2, "🔊 VOLUME", text_color=color.white, bgcolor=color.new(color.gray, 50))
+    volText = relativeVolume > 2.0 ? "SPIKE 🔥" : relativeVolume > 1.5 ? "HIGH" : relativeVolume > 1.0 ? "NORMAL" : "LOW"
+    table.cell(dashTable, 1, 2, volText + " (" + str.tostring(math.round(relativeVolume, 2)) + "x)", text_color=color.white)
+    
+    // Row 4: Price Structure
+    table.cell(dashTable, 0, 3, "📈 STRUCTURE", text_color=color.white, bgcolor=color.new(color.gray, 50))
+    structText = (isHigherHigh and isHigherLow) ? "UP ↗️" : (isLowerHigh and isLowerLow) ? "DOWN ↘️" : "MIXED"
+    table.cell(dashTable, 1, 3, structText, text_color=color.white)
+    
+    // Row 5: Active Signals
+    table.cell(dashTable, 0, 4, "⚡ SIGNALS", text_color=color.white, bgcolor=color.new(color.gray, 50))
+    eventText = (bosUp ? "BRK↑ " : "") + (bosDown ? "BRK↓ " : "") + (chochUp ? "CHG↑" : "") + (chochDown ? "CHG↓" : "")
+    table.cell(dashTable, 1, 4, eventText != "" ? eventText : "NONE", text_color=color.white)
+    
+    // Row 6: Momentum
+    table.cell(dashTable, 0, 5, "🎯 MOMENTUM", text_color=color.white, bgcolor=color.new(color.gray, 50))
+    rsiColor = rsiValue > 70 ? color.red : rsiValue < 30 ? color.green : color.white
+    table.cell(dashTable, 1, 5, str.tostring(math.round(rsiValue)) + " (" + (isMomentumUp ? "↑" : isMomentumDown ? "↓" : "→") + ")", text_color=rsiColor)
+    
+    // Row 7: Buy Confidence
+    table.cell(dashTable, 0, 6, "🟢 BUY SCORE", text_color=color.white, bgcolor=color.new(color.gray, 50))
+    buyColor = buyScore >= minConfidence ? color.green : color.orange
+    table.cell(dashTable, 1, 6, str.tostring(int(buyScore)) + "/" + str.tostring(minConfidence), text_color=buyColor)
+    
+    // Row 8: Sell Confidence
+    table.cell(dashTable, 0, 7, "🔴 SELL SCORE", text_color=color.white, bgcolor=color.new(color.gray, 50))
+    sellColor = sellScore >= minConfidence ? color.red : color.orange
+    table.cell(dashTable, 1, 7, str.tostring(int(sellScore)) + "/" + str.tostring(minConfidence), text_color=sellColor)
+    
+    // Row 9: Active Zones
+    table.cell(dashTable, 0, 8, "🟥 ZONES", text_color=color.white, bgcolor=color.new(color.gray, 50))
+    zoneText = "Sell:" + str.tostring(array.size(supplyZones)) + " Buy:" + str.tostring(array.size(demandZones))
+    table.cell(dashTable, 1, 8, zoneText, text_color=color.white)
+    
+    // Row 10: Price Volatility
+    table.cell(dashTable, 0, 9, "📏 VOLATILITY", text_color=color.white, bgcolor=color.new(color.gray, 50))
+    table.cell(dashTable, 1, 9, str.tostring(math.round(atrPercent * 100, 2)) + "%", text_color=color.white)
+
+// ====================================================================================
+// End of Institutional Insight Indicator v2.0
+// ==================================================================================== 
